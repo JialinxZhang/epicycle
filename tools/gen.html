@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>傅里叶体 · 生成器</title>
+<style>
+  body { background:#07070A; color:#EDEAE3; font:13px/1.6 ui-monospace, monospace; margin:0; padding:24px; }
+  h1 { font-size:12px; letter-spacing:.3em; font-weight:400; color:#6a6a76; margin:0 0 14px; text-transform:uppercase; }
+  pre { white-space:pre-wrap; word-break:break-all; color:#5EEBFF; font-size:11px; }
+  .log { color:#6a6a76; }
+</style>
+</head>
+<body>
+<h1>Fourier Type — generator</h1>
+<div class="log" id="log">working…</div>
+<script src="../js/geom.js"></script>
+<script>
+/* A starter set: the highest-frequency characters of modern Chinese,
+   scoped to what a demo actually needs. Everything else falls back at runtime. */
+var CHARS =
+  '的一是了我不人在他有这个上们来到时大地为子中你说生国年着就那和要她出也得里后自以会家可下而过天去能对小多然于心学么之都好看起发当没成只如事把还用第样道想作种开美总从无情己面最女但现前些所同日手又行意动方期它头经长儿回位分爱老因很给名法间知世什两次使身者被高已亲其进此话常与活正感见明问力理点文几定本公特做外孩相西果走将月十实向声车全信重三机工物气每并别真打太新比才便再书部水像眼等体却加电主界门利海受听表德少克代员许先口由死安写性马光白或住难望教命花结乐色更拉东神记处让母父应直字场平报友关放至张认接告入笑内英军候民岁往何度山觉路带万男边风解叫任金快原吃妈变通师立象数四失满战远格士音轻目条呢病始达深完今提求清王化空业思切怎非找片语元喜离飞科言干流欢约各即指合反题必该论交终林请医晚制球决传画保读运及则房早院量苦火布品近坐产答星精视五连司巴奇管类未朋且婚台夜青北队久乎越观落尽形影红爸百令周吧识步希亚术留市半热送兴造谈容极随演收首根讲整式取照办强石古华拿计您装似足双妻转诉米称丽客南领节衣站黑刻统断福城故历惊脸选包紧争另建维绝树系伤示愿持千史谁草积批育针否怀般模景修座属曲刀帮兵策恶微酒卡刚烟追笔逐春冬秋夏风雨雪云月星山川河湖海江花草木林森石泉溪谷峰岩松竹梅兰菊莲柳桑枫梧桃李杏梨荷桂心灯书信琴棋画诗酒茶梦影烟尘霜露霞光暗明静喧孤寒暖浮沉轻深浅浓淡远近高低长短永。';
+
+var q = new URLSearchParams(location.search);
+var from = parseInt(q.get('from') || '0', 10);
+var to = parseInt(q.get('to') || String(CHARS.length), 10);
+
+var all = CHARS.split('');
+/* dedupe, keep order */
+var seen = {}, list = [];
+for (var i = 0; i < all.length; i++) {
+  var c = all[i];
+  if (seen[c]) continue;
+  seen[c] = 1;
+  list.push(c);
+}
+
+var slice = list.slice(from, to);
+var out = {};
+var t0 = performance.now();
+
+for (var k = 0; k < slice.length; k++) {
+  var ch = slice[k];
+  var st = EP.geom.charStrokesEm(ch, { size: 400, font: '"Noto Sans SC","思源黑体",sans-serif' });
+  if (st && st.length) out[ch] = st;
+}
+
+var t1 = performance.now();
+document.getElementById('log').textContent =
+  'chars=' + slice.length + ' of ' + list.length +
+  ' ok=' + Object.keys(out).length +
+  ' ms=' + Math.round(t1 - t0) +
+  ' bytes=' + JSON.stringify(out).length;
+
+var pre = document.createElement('pre');
+pre.id = 'out';
+pre.textContent = JSON.stringify({ v: 1, upem: 1000, src: 'Noto Sans SC', from: from, to: to, chars: out });
+document.body.appendChild(pre);
+</script>
+</body>
+</html>

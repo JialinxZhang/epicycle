@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>永 · 中国邮递员</title>
+<style>
+  :root { --bg:#07070A; --ink:#EDEAE3; --dim:rgba(237,234,227,.42); --accent:#5EEBFF; --amber:#FFB020; --pink:#FF4D7A; --hair:rgba(237,234,227,.12); }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--ink); font-family:"Segoe UI", system-ui, sans-serif; }
+  .wrap { padding:24px 28px 30px; }
+  h1 { font-size:12px; letter-spacing:.3em; font-weight:400; color:var(--dim); text-transform:uppercase; }
+  .lede { font-size:12px; color:rgba(237,234,227,.3); margin:8px 0 18px; letter-spacing:.04em; }
+  .panels { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .panel { border:1px solid var(--hair); }
+  .panel .cap { display:flex; justify-content:space-between; font-size:11px; letter-spacing:.14em; padding:8px 12px; color:var(--dim); border-bottom:1px solid var(--hair); }
+  .panel .cap b { color:var(--ink); font-weight:400; letter-spacing:.08em; }
+  canvas { display:block; width:100%; }
+  .stats { display:flex; gap:28px; margin-top:18px; font-family:ui-monospace,monospace; font-size:11px; color:var(--dim); letter-spacing:.06em; flex-wrap:wrap; }
+  .stats b { color:var(--accent); font-weight:400; }
+  .stats .warn b { color:var(--amber); }
+  .stats .bad b { color:var(--pink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Chinese Postman × 永</h1>
+  <div class="lede">一条闭合回路走遍骨架。琥珀 = 沿原路回墨（已有墨，看不见）；洋红 = 字体里原本不存在的连线（新墨，看得见）。</div>
+  <div class="panels">
+    <div class="panel">
+      <div class="cap"><span>回路 · 结构可见</span><b id="capA">—</b></div>
+      <canvas id="a"></canvas>
+    </div>
+    <div class="panel">
+      <div class="cap"><span>墨迹 · 真实成字</span><b id="capB">—</b></div>
+      <canvas id="b"></canvas>
+    </div>
+  </div>
+  <div class="stats" id="stats"></div>
+</div>
+
+<script src="../data/fourier-font.js"></script>
+<script>
+window.addEventListener('error', function (e) {
+  document.title = 'ERR ' + e.message + ' @' + e.lineno;
+  var el = document.getElementById('stats');
+  if (el) el.textContent = 'ERR: ' + e.message + ' @line ' + e.lineno;
+});
+</script>
+<script>
+(function () {
+  'use strict';
+
+  var TOL = 26 / 1000;
+  var QS = new URLSearchParams(location.search);
+  var CH = QS.get('ch') || '永';
+  var MINLEN = (parseFloat(QS.get('min')) || 45) / 1000;
+  var raw = (window.EP_FONT && window.EP_FONT.chars[CH]) || [];
+
+  /* hand-drawn 「永」: five strokes, all connected, no bridges needed.
+     coordinates in a 1000-unit box, y down */
+  var DESIGN_A = [
+    [[430, 120], [532, 284]],                       /* 点  */
+    [[170, 300], [640, 300], [640, 760], [585, 700]], /* 横折钩 */
+    [[200, 430], [470, 430], [330, 700]],           /* 横撇 */
+    [[432, 470], [150, 880]],                       /* 撇  */
+    [[430, 500], [810, 880]]                        /* 捺  */
+  ];
+  /* variant B: the hook curls back into the 竖 — one closed counter */
+  var DESIGN_B = DESIGN_A.slice(0, 4).concat([
+    [[430, 500], [810, 880], [700, 905], [640, 840], [640, 760]]
+  ]);
+
+  /* variant C: a visible base arc joins the two free tips — new ink, but a cycle */
+  var DESIGN_C = DESIGN_A.concat([
+    [[150, 880], [480, 935], [810, 880]]
+  ]);
+
+  var design = QS.get('v') === 'b' ? DESIGN_B : (QS.get('v') === 'c' ? DESIGN_C : DESIGN_A);
+  var useDesign = QS.get('src') === 'design';
+  if (useDesign) raw = design;
+
+  var strokes = raw
+    .map(function (s) { return s.map(function (p) { return [p[0] / 1000, p[1] / 1000]; }); })
+    .filter(function (s) { return s.length >= 2 && plen(s) >= MINLEN; });
+
+  function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
+  function plen(p) { var L = 0; for (var i = 1; i < p.length; i++) L += dist(p[i], p[i - 1]); return L; }
+  function closestOnSeg(p, a, b) {
+    var vx = b[0] - a[0], vy = b[1] - a[1], vv = vx * vx + vy * vy;
+    var t = vv ? ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / vv : 0;
+    t = Math.max(0, Math.min(1, t));
+    var q = [a[0] + vx * t, a[1] + vy * t];
+    return { p: q, d: dist(p, q), t: t };
+  }
+
+  /* ---------- 1. vertices + subdivided edges ---------- */
+  var verts = [];
+  function addVert(p) {
+    for (var i = 0; i < verts.length; i++) if (dist(p, verts[i]) < TOL) return i;
+    verts.push([p[0], p[1]]);
+    return verts.length - 1;
+  }
+  strokes.forEach(function (s) {
+    if (s.length < 2) return;
+    addVert(s[0]); addVert(s[s.length - 1]);
+  });
+
+  var edges = [];
+  strokes.forEach(function (s) {
+    if (s.length < 2) return;
+    var cuts = [];
+    for (var v = 0; v < verts.length; v++) {
+      var best = { d: Infinity, i: -1, p: null };
+      for (var i = 1; i < s.length; i++) {
+        var r = closestOnSeg(verts[v], s[i - 1], s[i]);
+        if (r.d < best.d) best = { d: r.d, i: i, p: r.p };
+      }
+      if (best.d < TOL) {
+        var acc = 0;
+        for (var k = 1; k < best.i; k++) acc += dist(s[k], s[k - 1]);
+        acc += dist(s[best.i - 1], best.p);
+        cuts.push({ v: v, at: acc, i: best.i, p: best.p });
+      }
+    }
+    cuts.sort(function (x, y) { return x.at - y.at; });
+    var clean = [];
+    cuts.forEach(function (c) {
+      if (!clean.length || Math.abs(c.at - clean[clean.length - 1].at) > TOL * 0.5) clean.push(c);
+    });
+    if (clean.length < 2) return;
+    for (var c = 0; c < clean.length - 1; c++) {
+      var A = clean[c], B = clean[c + 1];
+      var pts = [A.p];
+      for (var j = A.i; j < B.i; j++) pts.push(s[j]);
+      pts.push(B.p);
+      if (pts.length < 2) continue;
+      var L = plen(pts);
+      if (L < TOL * 0.3) continue;
+      edges.push({ a: A.v, b: B.v, pts: pts, len: L, bridge: false });
+    }
+  });
+
+  /* ---------- 1b. dissolve degree-2 vertices: the tracer splits strokes at
+     every junction, a designer would not. merge them back. ---------- */
+  function buildAdj() {
+    var adj = verts.map(function () { return []; });
+    edges.forEach(function (e, i) {
+      if (e.a === e.b) return;
+      adj[e.a].push({ to: e.b, e: i });
+      adj[e.b].push({ to: e.a, e: i });
+    });
+    return adj;
+  }
+
+  function dissolveDegree2() {
+    var changed = true, guardD = 0;
+    while (changed && guardD++ < 200) {
+      changed = false;
+      var adj0 = buildAdj();
+      for (var v = 0; v < verts.length; v++) {
+        if (adj0[v].length !== 2) continue;
+        var e1 = adj0[v][0].e, e2 = adj0[v][1].e;
+        if (e1 === e2) continue;
+        var A = edges[e1], B = edges[e2];
+      if ((A.a === B.b && A.b === B.a) || (A.a === B.a && A.b === B.b)) continue;
+        var p1 = A.pts.slice(), p2 = B.pts.slice();
+        if (A.b !== v) p1.reverse();            /* end at v */
+        if (B.a !== v) p2.reverse();            /* start at v */
+        var joined = p1.concat(p2.slice(1));
+        edges.push({ a: A.a === v ? A.b : A.a, b: B.a === v ? B.b : B.a,
+                     pts: joined, len: plen(joined), bridge: A.bridge || B.bridge });
+        edges[e1] = null;
+        edges[e2] = null;
+        edges = edges.filter(function (e) { return e; });
+        changed = true;
+        break;
+      }
+    }
+  }
+  dissolveDegree2();
+  var adj = buildAdj();
+
+  /* ---------- 2. components ---------- */
+  function components(adj) {
+    var seen = new Array(verts.length).fill(-1);
+    var n = 0;
+    for (var i = 0; i < verts.length; i++) {
+      if (seen[i] >= 0) continue;
+      var q = [i]; seen[i] = n;
+      while (q.length) {
+        var u = q.pop();
+        adj[u].forEach(function (a) { if (seen[a.to] < 0) { seen[a.to] = n; q.push(a.to); } });
+      }
+      n++;
+    }
+    return { label: seen, count: n };
+  }
+
+  var comp = components(adj);
+  var bridges = 0, bridgeLen = 0;
+
+  /* connect components with the shortest straight bridge (that is new ink in the glyph) */
+  var guard = 0;
+  while (comp.count > 1 && guard++ < 12) {
+    var bestPair = { d: Infinity, a: -1, b: -1 };
+    for (var i = 0; i < verts.length; i++) {
+      for (var j = i + 1; j < verts.length; j++) {
+        if (comp.label[i] === comp.label[j]) continue;
+        var d = dist(verts[i], verts[j]);
+        if (d < bestPair.d) bestPair = { d: d, a: i, b: j };
+      }
+    }
+    if (bestPair.a < 0) break;
+    edges.push({
+      a: bestPair.a, b: bestPair.b,
+      pts: [verts[bestPair.a].slice(), verts[bestPair.b].slice()],
+      len: bestPair.d, bridge: true
+    });
+    bridges++; bridgeLen += bestPair.d;
+    adj = buildAdj();
+    comp = components(adj);
+  }
+
+  /* ---------- 3. degrees ---------- */
+  var deg = adj.map(function (a) { return a.length; });
+  var odd = [];
+  deg.forEach(function (d, i) { if (d % 2 === 1) odd.push(i); });
+
+  /* ---------- 4. Dijkstra ---------- */
+  function dijkstra(src) {
+    var n = verts.length;
+    var D = new Array(n).fill(Infinity), P = new Array(n).fill(-1);
+    var done = new Array(n).fill(false);
+    D[src] = 0;
+    for (var it = 0; it < n; it++) {
+      var u = -1, bd = Infinity;
+      for (var i = 0; i < n; i++) if (!done[i] && D[i] < bd) { bd = D[i]; u = i; }
+      if (u < 0) break;
+      done[u] = true;
+      for (var k = 0; k < adj[u].length; k++) {
+        var lk = adj[u][k], w = D[u] + edges[lk.e].len;
+        if (w < D[lk.to]) { D[lk.to] = w; P[lk.to] = lk.e; }
+      }
+    }
+    return { D: D, P: P };
+  }
+  var SP = {};
+  odd.forEach(function (v) { SP[v] = dijkstra(v); });
+
+  function pathEdges(a, b) {
+    var res = [], cur = b, guard2 = 0;
+    while (cur !== a && guard2++ < 400) {
+      var e = SP[a].P[cur];
+      if (e < 0) break;
+      res.push(e);
+      cur = edges[e].a === cur ? edges[e].b : edges[e].a;
+    }
+    return res;
+  }
+
+  /* ---------- 5. match odd nodes (greedy + 2-opt) ---------- */
+  var m = odd.length;
+  var W = [];
+  for (var i = 0; i < m; i++) {
+    W.push([]);
+    for (var j = 0; j < m; j++) {
+      W[i][j] = (i === j) ? 0 : SP[odd[i]].D[odd[j]];
+      if (!isFinite(W[i][j])) W[i][j] = dist(verts[odd[i]], verts[odd[j]]) * 1.5;
+    }
+  }
+
+  var avail = [];
+  for (var i2 = 0; i2 < m; i2++) avail.push(i2);
+  var pairs = [];
+  while (avail.length >= 2) {
+    var bp = { d: Infinity, a: -1, b: -1 };
+    for (var x = 0; x < avail.length; x++) {
+      for (var y = x + 1; y < avail.length; y++) {
+        var dd = W[avail[x]][avail[y]];
+        if (dd < bp.d) bp = { d: dd, a: avail[x], b: avail[y] };
+      }
+    }
+    pairs.push([bp.a, bp.b]);
+    avail = avail.filter(function (k) { return k !== bp.a && k !== bp.b; });
+  }
+
+  /* 2-opt over pairs */
+  for (var pass = 0; pass < 8; pass++) {
+    var improved = false;
+    for (var p1 = 0; p1 < pairs.length; p1++) {
+      for (var p2 = p1 + 1; p2 < pairs.length; p2++) {
+        var A1 = pairs[p1][0], B1 = pairs[p1][1], A2 = pairs[p2][0], B2 = pairs[p2][1];
+        var now = W[A1][B1] + W[A2][B2];
+        var alt1 = W[A1][A2] + W[B1][B2];
+        var alt2 = W[A1][B2] + W[B1][A2];
+        if (alt1 < now - 1e-9 && alt1 <= alt2) { pairs[p1] = [A1, A2]; pairs[p2] = [B1, B2]; improved = true; }
+        else if (alt2 < now - 1e-9) { pairs[p1] = [A1, B2]; pairs[p2] = [B1, A2]; improved = true; }
+      }
+    }
+    if (!improved) break;
+  }
+
+  var dup = {};
+  pairs.forEach(function (pr) {
+    pathEdges(odd[pr[0]], odd[pr[1]]).forEach(function (e) {
+      dup[e] = (dup[e] || 0) + 1;
+    });
+  });
+
+  /* ---------- 6. multigraph + Euler ---------- */
+  var multi = [];
+  edges.forEach(function (e, i) {
+    multi.push({ e: i, dup: false });
+    for (var k = 0; k < (dup[i] || 0); k++) multi.push({ e: i, dup: true });
+  });
+
+  var pool = verts.map(function () { return []; });
+  multi.forEach(function (M, idx) {
+    var e = edges[M.e];
+    if (e.a === e.b) return;
+    pool[e.a].push({ idx: idx, to: e.b });
+    pool[e.b].push({ idx: idx, to: e.a });
+  });
+
+  var ptr = verts.map(function () { return 0; });
+  var usedM = new Array(multi.length).fill(false);
+  var stackN = [0], circuitN = [];
+
+  while (stackN.length) {
+    var v = stackN[stackN.length - 1];
+    var found = -1;
+    while (ptr[v] < pool[v].length) {
+      var cand = pool[v][ptr[v]];
+      if (!usedM[cand.idx]) { found = cand.idx; break; }
+      ptr[v]++;
+    }
+    if (found < 0) { circuitN.push(stackN.pop()); }
+    else {
+      usedM[found] = true;
+      var e3 = edges[multi[found].e];
+      stackN.push(e3.a === v ? e3.b : e3.a);
+    }
+  }
+  circuitN.reverse();
+
+  /* ---------- 7. replay ---------- */
+  var taken = new Array(multi.length).fill(false);
+  var segs = [];
+  var totalLen = 0, dupLen = 0;
+
+  for (var c = 0; c < circuitN.length - 1; c++) {
+    var f = circuitN[c], t = circuitN[c + 1];
+    var hit = -1;
+    for (var q = 0; q < pool[f].length; q++) {
+      var cc = pool[f][q];
+      if (cc.to === t && !taken[cc.idx]) { hit = cc.idx; break; }
+    }
+    if (hit < 0) continue;
+    taken[hit] = true;
+    var ee = edges[multi[hit].e];
+    var pts = ee.pts.slice();
+    if (ee.a !== f) pts.reverse();
+    segs.push({ pts: pts, dup: multi[hit].dup, bridge: ee.bridge });
+    totalLen += ee.len;
+    if (multi[hit].dup) dupLen += ee.len;
+  }
+
+  /* ---------- 8. draw ---------- */
+  var Wc = 600, Hc = 540;
+  var minX = 9, minY = 9, maxX = -9, maxY = -9;
+  segs.forEach(function (s) {
+    s.pts.forEach(function (p) {
+      if (p[0] < minX) minX = p[0];
+      if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1];
+      if (p[1] > maxY) maxY = p[1];
+    });
+  });
+  var S = Math.min((Wc - 110) / (maxX - minX || 1), (Hc - 110) / (maxY - minY || 1));
+  var cxg = (minX + maxX) / 2, cyg = (minY + maxY) / 2;
+  var FLIP = QS.get('flip') === '1';
+  function T(p) {
+    return [Wc / 2 + (p[0] - cxg) * S, Hc / 2 + (FLIP ? -1 : 1) * (p[1] - cyg) * S];
+  }
+
+  function setup(id) {
+    var cv = document.getElementById(id);
+    var dpr = 2;
+    cv.width = Wc * dpr; cv.height = Hc * dpr;
+    cv.style.height = Hc + 'px';
+    var ctx = cv.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#0A0A0F';
+    ctx.fillRect(0, 0, Wc, Hc);
+    return ctx;
+  }
+  function drawSeg(ctx, pts, color, width, alpha) {
+    ctx.beginPath();
+    for (var i = 0; i < pts.length; i++) {
+      var q = T(pts[i]);
+      if (i === 0) ctx.moveTo(q[0], q[1]); else ctx.lineTo(q[0], q[1]);
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.globalAlpha = alpha;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  var a = setup('a');
+  var ghostAlpha = QS.get('ghost') === '1' ? 0.95 : 0.10;
+  strokes.forEach(function (s) { drawSeg(a, s, 'rgba(237,234,227,' + ghostAlpha + ')', 1.4, 1); });
+  segs.forEach(function (s) {
+    if (s.bridge) drawSeg(a, s.pts, '#FF4D7A', 2.4, 0.95);
+    else if (s.dup) drawSeg(a, s.pts, '#FFB020', 2.2, 0.75);
+    else drawSeg(a, s.pts, '#5EEBFF', 2.2, 0.95);
+  });
+  var st = T(segs[0].pts[0]);
+  a.beginPath(); a.arc(st[0], st[1], 6, 0, 7); a.strokeStyle = '#EDEAE3'; a.lineWidth = 1; a.stroke();
+
+  var b = setup('b');
+  segs.forEach(function (s) { drawSeg(b, s.pts, 'rgba(94,235,255,0.5)', 2.2, 1); });
+
+  var dupPct = totalLen ? dupLen / totalLen * 100 : 0;
+  var brPct = totalLen ? bridgeLen / totalLen * 100 : 0;
+
+  document.getElementById('capA').textContent = '一笔 · ' + segs.length + ' 段';
+  document.getElementById('capB').textContent = '重描 ' + dupPct.toFixed(1) + '% · 新墨 ' + brPct.toFixed(1) + '%';
+
+  document.getElementById('stats').innerHTML =
+    '<span>笔画 <b>' + strokes.length + '</b></span>' +
+    '<span>连通块 <b>' + components(buildAdj()).count + '</b></span>' +
+    '<span>边 <b>' + edges.length + '</b></span>' +
+    '<span>节点 <b>' + verts.length + '</b></span>' +
+    '<span>奇点 <b>' + odd.length + '</b> → ' + pairs.length + ' 对</span>' +
+    '<span class="bad">新墨 <b>' + brPct.toFixed(1) + '%</b>（' + bridges + ' 条连线）</span>' +
+    '<span class="warn">回墨 <b>' + dupPct.toFixed(1) + '%</b></span>';
+
+  document.title = '永 · strokes=' + strokes.length + ' comps=' + components(buildAdj()).count +
+    ' bridges=' + bridges + ' dup=' + dupPct.toFixed(1) + '% bridge=' + brPct.toFixed(1) + '%';
+
+  if (QS.get('dump') === '1') {
+    var pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify({
+      ch: CH,
+      dup: dupPct,
+      bridge: brPct,
+      pts: segs.reduce(function (acc, s) {
+        var pts = s.pts.map(function (q) {
+          return [Math.round(q[0] * 1000), Math.round(q[1] * 1000)];
+        });
+        if (acc.length) pts = pts.slice(1);
+        return acc.concat(pts);
+      }, [])
+    });
+    document.body.appendChild(pre);
+  }
+})();
+</script>
+</body>
+</html>

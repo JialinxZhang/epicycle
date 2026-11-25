@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>字体 × 骨架 对照实验</title>
+<style>
+  :root { --bg:#07070A; --ink:#EDEAE3; --dim:rgba(237,234,227,.42); --hair:rgba(237,234,227,.12); --accent:#5EEBFF; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--ink); font-family: "Segoe UI", system-ui, sans-serif; }
+  .wrap { padding:28px 32px 40px; }
+  h1 { font-size:13px; letter-spacing:.3em; font-weight:400; color:var(--dim); text-transform:uppercase; margin-bottom:6px; }
+  .lede { font-size:12px; color:rgba(237,234,227,.28); margin-bottom:22px; letter-spacing:.06em; }
+  .grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:18px; }
+  .cell { border:1px solid var(--hair); padding:10px 12px 12px; }
+  .cell .head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+  .cell .name { font-size:13px; letter-spacing:.08em; }
+  .cell .tag { font-family:ui-monospace,monospace; font-size:9px; color:var(--dim); letter-spacing:.14em; }
+  .cell canvas { display:block; width:100%; background:#0A0A0F; }
+  .cell .stat { font-family:ui-monospace,monospace; font-size:9px; color:rgba(237,234,227,.45); margin-top:7px; letter-spacing:.08em; line-height:1.5; }
+  .cell .stat b { color:var(--accent); font-weight:400; }
+  .bad .stat b { color:#FF6B6B; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Typeface × Skeleton — 对照实验</h1>
+  <div class="lede">同一个「永」字，400px 栅格化 → Zhang-Suen 细化 → 骨架追踪。红色 = 长度小于字高 6% 的碎枝（也就是那些"小短横"）。</div>
+  <div class="grid" id="grid"></div>
+</div>
+<script src="../js/geom.js"></script>
+<script>
+var FONTS = [
+  ['宋体',        '"宋体", "SimSun", serif'],
+  ['新宋体',       '"新宋体", "NSimSun", serif'],
+  ['华文宋体',     '"华文宋体", "STSong", serif'],
+  ['仿宋',        '"仿宋", "FangSong", serif'],
+  ['楷体',        '"楷体", "KaiTi", serif'],
+  ['华文行楷',     '"华文行楷", "STXingkai", cursive'],
+  ['黑体',        '"黑体", "SimHei", sans-serif'],
+  ['等线',        '"等线", "DengXian", sans-serif'],
+  ['幼圆',        '"幼圆", "YouYuan", sans-serif'],
+  ['微软雅黑',     '"微软雅黑", "Microsoft YaHei", sans-serif'],
+  ['华文细黑',     '"华文细黑", "STXihei", sans-serif'],
+  ['Noto Sans SC','"Noto Sans SC", sans-serif']
+];
+
+var CH = '永';
+var SIZE = 400;
+var grid = document.getElementById('grid');
+
+FONTS.forEach(function (f) {
+  var name = f[0], spec = f[1];
+  var cell = document.createElement('div');
+  cell.className = 'cell';
+
+  var head = document.createElement('div');
+  head.className = 'head';
+  head.innerHTML = '<span class="name">' + name + '</span><span class="tag">' + CH + '</span>';
+  cell.appendChild(head);
+
+  var cv = document.createElement('canvas');
+  cv.style.height = '230px';
+  cell.appendChild(cv);
+
+  var stat = document.createElement('div');
+  stat.className = 'stat';
+  cell.appendChild(stat);
+
+  grid.appendChild(cell);
+
+  var img = EP.geom.rasterize(CH, SIZE, spec);
+  if (!img) { stat.textContent = 'no glyph'; return; }
+  EP.geom.thin(img);
+  var segs = EP.geom.trace(img);
+
+  var H = img.h;
+  var lens = segs.map(function (s) {
+    var L = 0;
+    for (var i = 1; i < s.length; i++) L += Math.hypot(s[i][0]-s[i-1][0], s[i][1]-s[i-1][1]);
+    return L;
+  });
+  var total = lens.reduce(function (a,b) { return a+b; }, 0);
+  var spurs = lens.filter(function (L) { return L < H * 0.06; }).length;
+  var spurLen = lens.filter(function (L) { return L < H * 0.06; }).reduce(function (a,b) { return a+b; }, 0);
+
+  var dpr = 2;
+  var cw = 320, chh = 230;
+  cv.width = cw * dpr; cv.height = chh * dpr;
+  var ctx = cv.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#0A0A0F';
+  ctx.fillRect(0, 0, cw, chh);
+
+  var S = Math.min((cw - 20) / img.w, (chh - 16) / img.h);
+  var ox = (cw - img.w * S) / 2, oy = (chh - img.h * S) / 2;
+
+  for (var i = 0; i < segs.length; i++) {
+    var short = lens[i] < H * 0.06;
+    ctx.strokeStyle = short ? '#FF6B6B' : 'rgba(94,235,255,0.9)';
+    ctx.lineWidth = short ? 2.2 : 1.4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (var k = 0; k < segs[i].length; k++) {
+      var X = ox + segs[i][k][0] * S, Y = oy + segs[i][k][1] * S;
+      if (k === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+    }
+    ctx.stroke();
+  }
+
+  if (spurs > 0) cell.classList.add('bad');
+  stat.innerHTML = '段 <b>' + segs.length + '</b> · 碎枝 <b>' + spurs + '</b> · 碎枝占比 <b>'
+    + (total > 0 ? (spurLen / total * 100).toFixed(1) : '0') + '%</b>';
+});
+</script>
+</body>
+</html>
