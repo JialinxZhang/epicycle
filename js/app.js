@@ -6,7 +6,7 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var txtEl = $('txt'), statusEl = $('status'), countEl = $('count'), knEl = $('kn');
-  var rK = $('rK'), vK = $('vK'), rS = $('rS'), vS = $('vS'), vF = $('vF'), vFace = $('vFace'), vMode = $('vMode');
+  var rK = $('rK'), vK = $('vK'), rS = $('rS'), vS = $('vS'), vF = $('vF'), vFace = $('vFace'), vMode = $('vMode'), vSnd = $('vSnd');
   var spec = $('spectrum'), sctx = spec.getContext('2d');
 
   var N = 1024, F = 720, PERIOD = 9000;
@@ -124,6 +124,7 @@
     state.shape = built;
     bars = null;
     EP.ink.setShape(built);
+    EP.audio.setChord(built.comps);
     drawBars();
 
     knEl.textContent = 'K = ' + state.K + ' / N = ' + N;
@@ -215,6 +216,7 @@
     }
 
     EP.ink.draw(t);
+    EP.audio.tick(phase, EP.ink.speed / 18);
     paintSpectrum();
   }
 
@@ -282,6 +284,22 @@
     });
     modeBtns.forEach(function (o) {
       o.classList.toggle('on', o.getAttribute('data-m') === state.mode);
+    });
+
+    var sndBtns = Array.prototype.slice.call(document.querySelectorAll('#sndRow button'));
+    sndBtns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        var on = b.getAttribute('data-s') === 'on';
+        EP.audio.setEnabled(on);
+        vSnd.textContent = on ? '开' : '关';
+        sndBtns.forEach(function (o) { o.classList.toggle('on', o === b); });
+        /* the audio graph only exists after a real gesture — restart the loop
+           so the current phrase is played with its own chord */
+        if (on) {
+          if (state.shape) EP.audio.setChord(state.shape.comps);
+          t = 0; phase = 'draw'; EP.ink.clear();
+        }
+      });
     });
 
     /* click to replay */

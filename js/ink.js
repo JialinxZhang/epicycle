@@ -13,6 +13,7 @@
   var shape = null;
   var scale = 1, ox = 0, oy = 0;
   var lastF = -1, prevPen = null;
+  var speed = 0;              /* px travelled since the previous frame */
 
   var LAYERS = [
     { color: 'rgba(94,235,255,0.08)', width: 10, blur: 0, a: 1 },
@@ -148,7 +149,7 @@
       var a = penOfFrame(f);
       if (prevPen && a.s === prevPen.s) {
         var dd = Math.hypot(a.x - prevPen.x, a.y - prevPen.y);
-        if (dd > 0.01 && dd < 60) seg(prevPen.x, prevPen.y, a.x, a.y);
+        if (dd > 0.01 && dd < 60) { seg(prevPen.x, prevPen.y, a.x, a.y); speed = dd; }
       }
       prevPen = a;
       lastF = f;
@@ -218,6 +219,7 @@
   EP.ink = {
     init: init, resize: resize, setShape: setShape,
     draw: draw, redraw: redraw, clear: clear, fade: fade,
+    get speed() { return speed; },
     get size() { return { w: W, h: H }; }
   };
 })(window.EP = window.EP || {});
