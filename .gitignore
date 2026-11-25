@@ -16,3 +16,12 @@ tools/dump-*.html
 # node
 node_modules/
 package-lock.json
+
+# raw captures for the poster (regenerate with tools/rednote.py)
+research/red/hero.png
+research/red/shanhe.png
+research/red/process.png
+research/red/one.png
+research/red/specimen.png
+research/red/skeletons.png
+research/red/fonts-compare.png
