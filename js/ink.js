@@ -216,9 +216,23 @@
     cctx.restore();
   }
 
+  /* one polyline per stroke, in canvas coordinates — used by the exporters */
+  function exportPaths() {
+    if (!shape) return [];
+    var runs = [], cur = null, curS = -1;
+    for (var f = 0; f < shape.totalF; f++) {
+      var p = penOfFrame(f);
+      if (p.s !== curS) { cur = []; runs.push(cur); curS = p.s; }
+      cur.push([p.x, p.y]);
+    }
+    return runs.filter(function (r) { return r.length > 1; });
+  }
+
   EP.ink = {
     init: init, resize: resize, setShape: setShape,
     draw: draw, redraw: redraw, clear: clear, fade: fade,
+    exportPaths: exportPaths,
+    canvas: function () { return inkC; },
     get speed() { return speed; },
     get size() { return { w: W, h: H }; }
   };

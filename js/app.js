@@ -41,6 +41,9 @@
   var bars = null, DPR = 1;
   var seedT = null;
 
+  /* the exporters need the current text for filenames */
+  EP.appText = function () { return state.text; };
+
   /* ---------- helpers ---------- */
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 
@@ -286,6 +289,23 @@
       o.classList.toggle('on', o.getAttribute('data-m') === state.mode);
     });
 
+    /* export */
+    var expBtns = Array.prototype.slice.call(document.querySelectorAll('#expRow button'));
+    expBtns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        var kind = b.getAttribute('data-e');
+        setStatus('● 导出中');
+        setTimeout(function () {
+          EP.exporter[kind](function (msg) {
+            lastStatus = '';
+            setStatus('● ' + msg);
+            setTimeout(function () { setStatus('● 绘制中'); }, 2400);
+          });
+        }, 30);
+      });
+    });
+
+    /* sound */
     var sndBtns = Array.prototype.slice.call(document.querySelectorAll('#sndRow button'));
     sndBtns.forEach(function (b) {
       b.addEventListener('click', function () {
