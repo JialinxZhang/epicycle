@@ -219,6 +219,7 @@
     }
 
     EP.ink.draw(t);
+    EP.recorder.frame(phase);
     EP.audio.tick(phase, EP.ink.speed / 18);
     paintSpectrum();
   }
@@ -291,9 +292,34 @@
 
     /* export */
     var expBtns = Array.prototype.slice.call(document.querySelectorAll('#expRow button'));
+    var recBtn = $('recBtn');
+
+    function toggleRecord() {
+      if (EP.recorder.isActive()) { EP.recorder.stop(); return; }
+
+      t = 0; phase = 'draw'; EP.ink.clear();
+      lastStatus = '';
+      setStatus('● 录制中');
+      recBtn.classList.add('on');
+      recBtn.textContent = '● 0.0s';
+
+      EP.recorder.start({
+        onTick: function (sec) { recBtn.textContent = '● ' + sec.toFixed(1) + 's'; },
+        onDone: function (msg) {
+          recBtn.classList.remove('on');
+          recBtn.textContent = 'REC';
+          lastStatus = '';
+          setStatus('● ' + msg);
+          setTimeout(function () { setStatus('● 绘制中'); }, 2600);
+        }
+      });
+    }
+
     expBtns.forEach(function (b) {
       b.addEventListener('click', function () {
         var kind = b.getAttribute('data-e');
+        if (kind === 'webm') { toggleRecord(); return; }
+
         setStatus('● 导出中');
         setTimeout(function () {
           EP.exporter[kind](function (msg) {

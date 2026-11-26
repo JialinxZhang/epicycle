@@ -16,6 +16,7 @@
   var running = false;
   var phase = 'idle';
   var held = false;
+  var dest = null;
 
   var PENTA = [0, 3, 5, 7, 10, 12, 15, 17];   /* A minor pentatonic, two octaves */
   var ROOT = 110;                              /* A2 */
@@ -181,6 +182,15 @@
     tick: tick,
     release: release,
     ready: function () { return !!ctx; },
+    /* a media stream of the same mix, for the screen recorder */
+    streamDestination: function () {
+      if (!ctx) return null;
+      if (!dest) {
+        dest = ctx.createMediaStreamDestination();
+        master.connect(dest);
+      }
+      return dest.stream;
+    },
     _debug: function () {
       if (!ctx) return null;
       return {
